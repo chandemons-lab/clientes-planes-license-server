@@ -9,21 +9,82 @@ const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'cambia-esta-clave';
 const DB = path.join(__dirname, 'licenses.json');
 
+const ADMIN_HTML = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Panel Licencias</title><style>body{font-family:Arial;margin:0;background:#f5f7fb;color:#172033}.wrap{max-width:1200px;margin:auto;padding:24px}.card{background:white;border-radius:12px;padding:20px;margin:14px 0;box-shadow:0 10px 30px #0001}input,select,button{padding:10px;border-radius:8px;border:1px solid #ccd;margin:4px}button{background:#1e7f4f;color:white;border:0;cursor:pointer}button.danger{background:#b00020}button.secondary{background:#334155}table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid #eee;padding:8px;text-align:left;vertical-align:top}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px}.actions{display:flex;gap:6px;flex-wrap:wrap}.small{font-size:12px;color:#64748b}.hidden{display:none}</style></head><body><div class="wrap"><h1>Panel de Licencias</h1><div class="card"><h2>Acceso</h2><input id="user" placeholder="Usuario" value="admin"><input id="pass" type="password" placeholder="Contrasena"><button onclick="login()">Entrar</button><p class="small">Admin principal: usuario admin + tu ADMIN_PASSWORD de Render.</p></div><div id="app" class="hidden"><div class="card"><h2>Crear licencia</h2><div class="grid"><input id="name" placeholder="Nombre cliente"><input id="phone" placeholder="Telefono"><input id="months" type="number" value="12" placeholder="Meses"><input id="devices" type="number" value="1" placeholder="Dispositivos"></div><button onclick="createLicense()">Generar clave</button><p id="created"></p></div><div id="usersCard" class="card hidden"><h2>Subusuarios</h2><div class="grid"><input id="newUser" placeholder="Usuario"><input id="newPass" placeholder="Contrasena"><button onclick="createUser()">Crear subusuario</button></div><table><thead><tr><th>Usuario</th><th>Accion</th></tr></thead><tbody id="userRows"></tbody></table></div><div class="card"><h2>Licencias</h2><table><thead><tr><th>Clave</th><th>Usuario</th><th>Cliente</th><th>Estado</th><th>Vence</th><th>Dispositivos</th><th>Acciones</th></tr></thead><tbody id="rows"></tbody></table></div></div></div><script>
+let session=null;
+const api=(url,opts={})=>fetch(url,{...opts,headers:{'Content-Type':'application/json','x-panel-user':user.value,'x-panel-password':pass.value,...(opts.headers||{})}}).then(r=>r.json());
+function esc(v){return String(v||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function dateInput(iso){if(!iso)return'';return new Date(iso).toISOString().slice(0,10)}
+async function login(){const r=await api('/api/panel/session');if(!r.ok){alert(r.message);return}session=r;app.classList.remove('hidden');usersCard.classList.toggle('hidden',!r.isAdmin);load();if(r.isAdmin)loadUsers()}
+async function load(){const r=await api('/api/admin/licenses');if(!r.ok){alert(r.message);return}rows.innerHTML=r.licenses.map(l=>'<tr><td><b>'+esc(l.key)+'</b><div class="small">'+esc(l.businessName||'')+'</div></td><td>'+esc(l.ownerUser||'')+'</td><td><input id="name-'+l.key+'" value="'+esc(l.customerName)+'"><br><input id="phone-'+l.key+'" value="'+esc(l.customerPhone)+'"></td><td><select id="status-'+l.key+'"><option value="active" '+(l.status==='active'?'selected':'')+'>active</option><option value="blocked" '+(l.status==='blocked'?'selected':'')+'>blocked</option></select></td><td><input id="expires-'+l.key+'" type="date" value="'+dateInput(l.expiresAt)+'"></td><td><input id="devices-'+l.key+'" type="number" min="1" value="'+(l.maxDevices||1)+'" style="width:70px"><div class="small">Usados: '+((l.devices||[]).length)+'/'+(l.maxDevices||1)+'</div></td><td><div class="actions"><button onclick="saveLicense(\\''+l.key+'\\')">Guardar</button><button class="secondary" onclick="clearDevices(\\''+l.key+'\\')">Liberar dispositivos</button><button class="danger" onclick="deleteLicense(\\''+l.key+'\\')">Borrar</button></div></td></tr>').join('')}
+async function createLicense(){const r=await api('/api/admin/licenses',{method:'POST',body:JSON.stringify({customerName:name.value,customerPhone:phone.value,months:months.value,maxDevices:devices.value})});if(!r.ok){alert(r.message);return}created.innerHTML='Clave creada: <b>'+esc(r.license.key)+'</b>';load()}
+async function saveLicense(key){const r=await api('/api/admin/update',{method:'POST',body:JSON.stringify({licenseKey:key,customerName:document.getElementById('name-'+key).value,customerPhone:document.getElementById('phone-'+key).value,status:document.getElementById('status-'+key).value,expiresAt:document.getElementById('expires-'+key).value,maxDevices:document.getElementById('devices-'+key).value})});if(!r.ok)alert(r.message);load()}
+async function clearDevices(key){if(!confirm('Liberar dispositivos usados?'))return;const r=await api('/api/admin/update',{method:'POST',body:JSON.stringify({licenseKey:key,clearDevices:true})});if(!r.ok)alert(r.message);load()}
+async function deleteLicense(key){if(!confirm('Seguro que quieres borrar esta licencia?'))return;const r=await api('/api/admin/delete',{method:'POST',body:JSON.stringify({licenseKey:key})});if(!r.ok)alert(r.message);load()}
+async function loadUsers(){const r=await api('/api/admin/users');if(!r.ok){alert(r.message);return}userRows.innerHTML=r.users.map(u=>'<tr><td>'+esc(u.username)+'</td><td><button class="danger" onclick="deleteUser(\\''+u.username+'\\')">Borrar</button></td></tr>').join('')}
+async function createUser(){const r=await api('/api/admin/users',{method:'POST',body:JSON.stringify({username:newUser.value,password:newPass.value})});if(!r.ok){alert(r.message);return}newUser.value='';newPass.value='';loadUsers()}
+async function deleteUser(username){if(!confirm('Borrar subusuario? Sus licencias no se borran.'))return;const r=await api('/api/admin/users/delete',{method:'POST',body:JSON.stringify({username})});if(!r.ok)alert(r.message);loadUsers()}
+</script></body></html>`;
+
 app.use(cors());
 app.use(express.json());
+app.get('/', (req, res) => res.type('html').send(ADMIN_HTML));
 app.use(express.static(path.join(__dirname, 'public')));
 
-function load(){ if(!fs.existsSync(DB)) return {licenses:[]}; return JSON.parse(fs.readFileSync(DB,'utf8')); }
+function defaultDb(){ return { users: [], licenses: [] }; }
+function load(){
+  if(!fs.existsSync(DB)) return defaultDb();
+  const db = JSON.parse(fs.readFileSync(DB,'utf8'));
+  if(!Array.isArray(db.users)) db.users = [];
+  if(!Array.isArray(db.licenses)) db.licenses = [];
+  for(const l of db.licenses) if(!l.ownerUser) l.ownerUser = 'admin';
+  return db;
+}
 function save(db){ fs.writeFileSync(DB, JSON.stringify(db,null,2)); }
 function newKey(){ return 'CP-' + crypto.randomBytes(3).toString('hex').toUpperCase() + '-' + crypto.randomBytes(3).toString('hex').toUpperCase() + '-' + crypto.randomBytes(3).toString('hex').toUpperCase(); }
-function auth(req,res,next){ if(req.headers['x-admin-password'] !== ADMIN_PASSWORD) return res.status(401).json({ok:false,message:'Contraseña admin incorrecta'}); next(); }
+function cleanUser(username){ return String(username || '').trim().toLowerCase().replace(/[^a-z0-9_.-]/g,''); }
+function auth(req,res,next){
+  const username = cleanUser(req.headers['x-panel-user'] || 'admin');
+  const password = String(req.headers['x-panel-password'] || req.headers['x-admin-password'] || '');
+  if(username === 'admin' && password === ADMIN_PASSWORD) { req.panelUser = 'admin'; req.isAdmin = true; return next(); }
+  const db = load();
+  const user = db.users.find(u => u.username === username && u.password === password);
+  if(!user) return res.status(401).json({ok:false,message:'Usuario o contrasena incorrectos'});
+  req.panelUser = username; req.isAdmin = false; next();
+}
+function visibleLicenses(db, req){ return req.isAdmin ? db.licenses : db.licenses.filter(l => l.ownerUser === req.panelUser); }
+function findLicense(db, req, key){ return visibleLicenses(db, req).find(x => x.key === key); }
 
-app.get('/api/admin/licenses', auth, (req,res)=> res.json({ok:true, licenses: load().licenses}));
+app.get('/api/panel/session', auth, (req,res)=> res.json({ok:true, user:req.panelUser, isAdmin:req.isAdmin}));
+app.get('/api/admin/users', auth, (req,res)=>{
+  if(!req.isAdmin) return res.status(403).json({ok:false,message:'Solo admin'});
+  res.json({ok:true, users: load().users.map(u=>({username:u.username}))});
+});
+app.post('/api/admin/users', auth, (req,res)=>{
+  if(!req.isAdmin) return res.status(403).json({ok:false,message:'Solo admin'});
+  const username = cleanUser(req.body.username);
+  const password = String(req.body.password || '').trim();
+  if(!username || !password) return res.status(400).json({ok:false,message:'Faltan usuario o contrasena'});
+  if(username === 'admin') return res.status(400).json({ok:false,message:'Ese usuario esta reservado'});
+  const db = load();
+  if(db.users.some(u=>u.username===username)) return res.status(409).json({ok:false,message:'El usuario ya existe'});
+  db.users.push({username,password,createdAt:new Date().toISOString()});
+  save(db); res.json({ok:true});
+});
+app.post('/api/admin/users/delete', auth, (req,res)=>{
+  if(!req.isAdmin) return res.status(403).json({ok:false,message:'Solo admin'});
+  const username = cleanUser(req.body.username);
+  const db = load();
+  db.users = db.users.filter(u=>u.username!==username);
+  save(db); res.json({ok:true});
+});
+
+app.get('/api/admin/licenses', auth, (req,res)=> res.json({ok:true, licenses: visibleLicenses(load(), req)}));
 app.post('/api/admin/licenses', auth, (req,res)=>{
   const db = load();
   const months = Number(req.body.months || 12);
   const license = {
     key: newKey(),
+    ownerUser: req.panelUser,
     customerName: req.body.customerName || '',
     customerPhone: req.body.customerPhone || '',
     status: 'active',
@@ -34,15 +95,22 @@ app.post('/api/admin/licenses', auth, (req,res)=>{
   };
   db.licenses.push(license); save(db); res.json({ok:true, license});
 });
-app.post('/api/admin/block', auth, (req,res)=>{
-  const db = load(); const l = db.licenses.find(x=>x.key===req.body.licenseKey);
+app.post('/api/admin/update', auth, (req,res)=>{
+  const db = load(); const l = findLicense(db, req, req.body.licenseKey);
   if(!l) return res.status(404).json({ok:false,message:'No encontrada'});
-  l.status = 'blocked'; save(db); res.json({ok:true});
+  if(req.body.customerName !== undefined) l.customerName = req.body.customerName;
+  if(req.body.customerPhone !== undefined) l.customerPhone = req.body.customerPhone;
+  if(req.body.status === 'active' || req.body.status === 'blocked') l.status = req.body.status;
+  if(req.body.maxDevices !== undefined) l.maxDevices = Math.max(1, Number(req.body.maxDevices || 1));
+  if(req.body.expiresAt) l.expiresAt = new Date(req.body.expiresAt).toISOString();
+  if(req.body.clearDevices) l.devices = [];
+  save(db); res.json({ok:true, license:l});
 });
-app.post('/api/admin/unblock', auth, (req,res)=>{
-  const db = load(); const l = db.licenses.find(x=>x.key===req.body.licenseKey);
-  if(!l) return res.status(404).json({ok:false,message:'No encontrada'});
-  l.status = 'active'; save(db); res.json({ok:true});
+app.post('/api/admin/delete', auth, (req,res)=>{
+  const db = load(); const before = db.licenses.length;
+  db.licenses = db.licenses.filter(x => !(x.key === req.body.licenseKey && (req.isAdmin || x.ownerUser === req.panelUser)));
+  if(db.licenses.length === before) return res.status(404).json({ok:false,message:'No encontrada'});
+  save(db); res.json({ok:true});
 });
 
 app.post('/api/activate', (req,res)=>{
@@ -70,4 +138,4 @@ app.post('/api/check', (req,res)=>{
   res.json({ok:true, expiresAt:l.expiresAt});
 });
 
-app.listen(PORT, ()=> console.log('Panel licencias activo en puerto '+PORT));
+app.listen(PORT, ()=> console.log('Panel licencias multiusuario activo en puerto '+PORT));

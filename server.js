@@ -77,14 +77,18 @@ async function loadFromSupabase(){
   return normalizeDb(rows[0].data);
 }
 async function saveToSupabase(db){
-  const previous = await loadFromSupabase();
-  await supabaseRequest('/rest/v1/' + SUPABASE_BACKUP_TABLE, {
-    method: 'POST',
-    body: JSON.stringify({
-      data: previous,
-      created_at: new Date().toISOString()
-    })
-  });
+  try {
+    const previous = await loadFromSupabase();
+    await supabaseRequest('/rest/v1/' + SUPABASE_BACKUP_TABLE, {
+      method: 'POST',
+      body: JSON.stringify({
+        data: previous,
+        created_at: new Date().toISOString()
+      })
+    });
+  } catch (err) {
+    console.error('No se pudo crear backup. El guardado principal continua.', err);
+  }
   await supabaseRequest('/rest/v1/' + SUPABASE_TABLE + '?on_conflict=id', {
     method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates' },
@@ -122,20 +126,27 @@ async function auth(req,res,next){
   const username = cleanUser(req.headers['x-panel-user'] || 'admin');
   const password = String(req.headers['x-panel-password'] || req.headers['x-admin-password'] || '');
   if(username === 'admin' && password === ADMIN_PASSWORD) { req.panelUser = 'admin'; req.isAdmin = true; return next(); }
-  const db = await load();
-  const user = db.users.find(u => u.username === username && u.password === password);
-  if(!user) return res.status(401).json({ok:false,message:'Usuario o contrasena incorrectos'});
-  req.panelUser = username; req.isAdmin = false; next();
+  try {
+    const db = await load();
+    const user = db.users.find(u => u.username === username && u.password === password);
+    if(!user) return res.status(401).json({ok:false,message:'Usuario o contrasena incorrectos'});
+    req.panelUser = username; req.isAdmin = false; next();
+  } catch (err) {
+    next(err);
+  }
 }
 function visibleLicenses(db, req){ return req.isAdmin ? db.licenses : db.licenses.filter(l => l.ownerUser === req.panelUser); }
 function findLicense(db, req, key){ return visibleLicenses(db, req).find(x => x.key === key); }
+function asyncRoute(fn){
+  return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+}
 
 app.get('/api/panel/session', auth, (req,res)=> res.json({ok:true, user:req.panelUser, isAdmin:req.isAdmin}));
-app.get('/api/admin/users', auth, async (req,res)=>{
+app.get('/api/admin/users', auth, asyncRoute(async (req,res)=>{
   if(!req.isAdmin) return res.status(403).json({ok:false,message:'Solo admin'});
   res.json({ok:true, users: (await load()).users.map(u=>({username:u.username}))});
-});
-app.post('/api/admin/users', auth, async (req,res)=>{
+}));
+app.post('/api/admin/users', auth, asyncRoute(async (req,res)=>{
   if(!req.isAdmin) return res.status(403).json({ok:false,message:'Solo admin'});
   const username = cleanUser(req.body.username);
   const password = String(req.body.password || '').trim();
@@ -145,8 +156,8 @@ app.post('/api/admin/users', auth, async (req,res)=>{
   if(db.users.some(u=>u.username===username)) return res.status(409).json({ok:false,message:'El usuario ya existe'});
   db.users.push({username,password,createdAt:new Date().toISOString()});
   await save(db); res.json({ok:true});
-});
-app.post('/api/admin/users/delete', auth, async (req,res)=>{
+}));
+app.post('/api/admin/users/delete', auth, asyncRoute(async (req,res)=>{
   if(!req.isAdmin) return res.status(403).json({ok:false,message:'Solo admin'});
   const username = cleanUser(req.body.username);
   if(username === 'admin') return res.status(400).json({ok:false,message:'No se puede borrar admin'});
@@ -154,10 +165,10 @@ app.post('/api/admin/users/delete', auth, async (req,res)=>{
   if(!db.users.some(u=>u.username===username)) return res.status(404).json({ok:false,message:'Subusuario no encontrado'});
   db.users = db.users.filter(u=>u.username!==username);
   await save(db); res.json({ok:true});
-});
+}));
 
-app.get('/api/admin/licenses', auth, async (req,res)=> res.json({ok:true, licenses: visibleLicenses(await load(), req)}));
-app.post('/api/admin/licenses', auth, async (req,res)=>{
+app.get('/api/admin/licenses', auth, asyncRoute(async (req,res)=> res.json({ok:true, licenses: visibleLicenses(await load(), req)})));
+app.post('/api/admin/licenses', auth, asyncRoute(async (req,res)=>{
   const db = await load();
   const months = Number(req.body.months || 12);
   const license = {
@@ -172,8 +183,8 @@ app.post('/api/admin/licenses', auth, async (req,res)=>{
     expiresAt: new Date(Date.now()+months*30*24*60*60*1000).toISOString()
   };
   db.licenses.push(license); await save(db); res.json({ok:true, license});
-});
-app.post('/api/admin/update', auth, async (req,res)=>{
+}));
+app.post('/api/admin/update', auth, asyncRoute(async (req,res)=>{
   const db = await load(); const l = findLicense(db, req, req.body.licenseKey);
   if(!l) return res.status(404).json({ok:false,message:'No encontrada'});
   if(req.body.customerName !== undefined) l.customerName = req.body.customerName;
@@ -183,15 +194,15 @@ app.post('/api/admin/update', auth, async (req,res)=>{
   if(req.body.expiresAt) l.expiresAt = new Date(req.body.expiresAt).toISOString();
   if(req.body.clearDevices) l.devices = [];
   await save(db); res.json({ok:true, license:l});
-});
-app.post('/api/admin/delete', auth, async (req,res)=>{
+}));
+app.post('/api/admin/delete', auth, asyncRoute(async (req,res)=>{
   const db = await load(); const before = db.licenses.length;
   db.licenses = db.licenses.filter(x => !(x.key === req.body.licenseKey && (req.isAdmin || x.ownerUser === req.panelUser)));
   if(db.licenses.length === before) return res.status(404).json({ok:false,message:'No encontrada'});
   await save(db); res.json({ok:true});
-});
+}));
 
-app.post('/api/activate', async (req,res)=>{
+app.post('/api/activate', asyncRoute(async (req,res)=>{
   const {licenseKey, deviceId, businessName} = req.body;
   const db = await load(); const l = db.licenses.find(x=>x.key===licenseKey);
   if(!l) return res.status(404).json({ok:false,message:'Licencia no existe'});
@@ -205,8 +216,8 @@ app.post('/api/activate', async (req,res)=>{
   l.lastActivationAt = new Date().toISOString();
   await save(db);
   res.json({ok:true, expiresAt:l.expiresAt, message:'Activada'});
-});
-app.post('/api/check', async (req,res)=>{
+}));
+app.post('/api/check', asyncRoute(async (req,res)=>{
   const {licenseKey, deviceId} = req.body;
   const l = (await load()).licenses.find(x=>x.key===licenseKey);
   if(!l) return res.status(404).json({ok:false,message:'Licencia no existe'});
@@ -214,6 +225,11 @@ app.post('/api/check', async (req,res)=>{
   if(new Date(l.expiresAt) < new Date()) return res.status(403).json({ok:false,message:'Licencia vencida'});
   if(!l.devices.includes(deviceId)) return res.status(403).json({ok:false,message:'Dispositivo no activado'});
   res.json({ok:true, expiresAt:l.expiresAt});
+}));
+
+app.use((err, req, res, next) => {
+  console.error(err);
+  res.status(500).json({ ok:false, message: err.message || 'Error interno del servidor' });
 });
 
 app.listen(PORT, ()=> console.log('Panel licencias multiusuario activo en puerto '+PORT+' usando datos en '+(USE_SUPABASE ? 'Supabase' : DB)));

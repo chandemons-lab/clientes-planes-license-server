@@ -60,6 +60,14 @@ function normalizeDb(db){
   for(const l of db.licenses) if(!l.ownerUser) l.ownerUser = 'admin';
   return db;
 }
+function findActiveDeviceLicense(db, licenseKey, deviceId){
+  const l = db.licenses.find(x=>x.key===licenseKey);
+  if(!l) return { error: { status: 404, message: 'Licencia no existe' } };
+  if(l.status !== 'active') return { error: { status: 403, message: 'Licencia bloqueada' } };
+  if(new Date(l.expiresAt) < new Date()) return { error: { status: 403, message: 'Licencia vencida' } };
+  if(!Array.isArray(l.devices) || !l.devices.includes(deviceId)) return { error: { status: 403, message: 'Dispositivo no activado' } };
+  return { license: l };
+}
 async function supabaseRequest(pathname, options = {}){
   const response = await fetch(SUPABASE_URL + pathname, {
     ...options,
@@ -293,17 +301,9 @@ app.post('/api/activate', asyncRoute(async (req,res)=>{
 }));
 app.post('/api/check', asyncRoute(async (req,res)=>{
   const {licenseKey, deviceId} = req.body;
-  const l = (await load()).licenses.find(x=>x.key===licenseKey);
-  if(!l) return res.status(404).json({ok:false,message:'Licencia no existe'});
-  if(l.status !== 'active') return res.status(403).json({ok:false,message:'Licencia bloqueada'});
-  if(new Date(l.expiresAt) < new Date()) return res.status(403).json({ok:false,message:'Licencia vencida'});
-  if(!l.devices.includes(deviceId)) return res.status(403).json({ok:false,message:'Dispositivo no activado'});
+  const found = findActiveDeviceLicense(await load(), licenseKey, deviceId);
+  if(found.error) return res.status(found.error.status).json({ok:false,message:found.error.message});
+  const l = found.license;
   res.json({ok:true, expiresAt:l.expiresAt});
 }));
-
-app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(500).json({ ok:false, message: err.message || 'Error interno del servidor' });
-});
-
-app.listen(PORT, ()=> console.log('Panel licencias multiusuario activo en puerto '+PORT+' usando datos en '+(USE_SUPABASE ? 'Supabase' : DB)));
+app.p

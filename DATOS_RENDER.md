@@ -45,12 +45,14 @@ Cada vez que el panel guarda cambios, tambien deja una copia anterior en `panel_
 
 El admin puede crear subusuarios con creditos iniciales y cargar mas creditos despues.
 
+- Un subusuario tambien puede crear otro subusuario si le carga creditos desde su propio saldo.
+- Un subusuario solo ve y gestiona los subusuarios creados por el.
 - 1 credito = 1 mes de licencia.
 - Si un subusuario crea una licencia de 12 meses, se descuentan 12 creditos.
 - Si no tiene creditos suficientes, no puede crear la licencia.
 - El subusuario ve sus creditos disponibles en el panel.
 - Al crear una licencia, el panel actualiza los creditos que le quedan.
-- Al borrar un subusuario, tambien se borran sus licencias asociadas.
+- Al borrar un subusuario, tambien se borran sus subusuarios y licencias asociadas.
 
 ## Opcion con Render de pago
 

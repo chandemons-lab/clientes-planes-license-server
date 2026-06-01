@@ -306,4 +306,27 @@ app.post('/api/check', asyncRoute(async (req,res)=>{
   const l = found.license;
   res.json({ok:true, expiresAt:l.expiresAt});
 }));
-app.p
+app.post('/api/app/clients/load', asyncRoute(async (req,res)=>{
+  const {licenseKey, deviceId} = req.body;
+  const found = findActiveDeviceLicense(await load(), licenseKey, deviceId);
+  if(found.error) return res.status(found.error.status).json({ok:false,message:found.error.message});
+  res.json({ok:true, clients:Array.isArray(found.license.appClients) ? found.license.appClients : []});
+}));
+app.post('/api/app/clients/save', asyncRoute(async (req,res)=>{
+  const {licenseKey, deviceId} = req.body;
+  const clients = Array.isArray(req.body.clients) ? req.body.clients : [];
+  const db = await load();
+  const found = findActiveDeviceLicense(db, licenseKey, deviceId);
+  if(found.error) return res.status(found.error.status).json({ok:false,message:found.error.message});
+  found.license.appClients = clients;
+  found.license.appClientsUpdatedAt = new Date().toISOString();
+  await save(db);
+  res.json({ok:true, saved:clients.length});
+}));
+
+app.use((err, req, res, next) => {
+  console.error(err);
+  res.status(500).json({ ok:false, message: err.message || 'Error interno del servidor' });
+});
+
+app.listen(PORT, ()=> console.log('Panel licencias multiusuario activo en puerto '+PORT+' usando datos en '+(USE_SUPABASE ? 'Supabase' : DB)));

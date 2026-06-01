@@ -24,16 +24,16 @@ function esc(v){return String(v||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&l
 function dateInput(iso){if(!iso)return'';return new Date(iso).toISOString().slice(0,10)}
 function updateCredits(credits){if(session)session.credits=credits;if(!session||session.isAdmin){creditBox.classList.add('hidden');months.removeAttribute('max');return}creditBox.classList.remove('hidden');creditBox.innerHTML='Creditos disponibles: <b>'+esc(credits||0)+'</b>';months.max=credits||0;if(Number(months.value)>Number(credits||0))months.value=credits||0}
 async function refreshSession(){const r=await api('/api/panel/session');if(r.ok){session=r;updateCredits(r.credits)}}
-async function login(){const r=await api('/api/panel/session');if(!r.ok){alert(r.message);return}session=r;app.classList.remove('hidden');usersCard.classList.toggle('hidden',!r.isAdmin);updateCredits(r.credits);load();if(r.isAdmin)loadUsers()}
+async function login(){const r=await api('/api/panel/session');if(!r.ok){alert(r.message);return}session=r;app.classList.remove('hidden');usersCard.classList.remove('hidden');updateCredits(r.credits);load();loadUsers()}
 async function load(){const r=await api('/api/admin/licenses');if(!r.ok){alert(r.message);return}rows.innerHTML=r.licenses.map(l=>'<tr><td><b>'+esc(l.key)+'</b><div class="small">'+esc(l.businessName||'')+'</div></td><td>'+esc(l.ownerUser||'')+'</td><td><input id="name-'+l.key+'" value="'+esc(l.customerName)+'"><br><input id="phone-'+l.key+'" value="'+esc(l.customerPhone)+'"></td><td><select id="status-'+l.key+'"><option value="active" '+(l.status==='active'?'selected':'')+'>active</option><option value="blocked" '+(l.status==='blocked'?'selected':'')+'>blocked</option></select></td><td><input id="expires-'+l.key+'" type="date" value="'+dateInput(l.expiresAt)+'"></td><td><input id="devices-'+l.key+'" type="number" min="1" value="'+(l.maxDevices||1)+'" style="width:70px"><div class="small">Usados: '+((l.devices||[]).length)+'/'+(l.maxDevices||1)+'</div></td><td><div class="actions"><button onclick="saveLicense(\\''+l.key+'\\')">Guardar</button><button class="secondary" onclick="clearDevices(\\''+l.key+'\\')">Liberar dispositivos</button><button class="danger" onclick="deleteLicense(\\''+l.key+'\\')">Borrar</button></div></td></tr>').join('')}
 async function createLicense(){const r=await api('/api/admin/licenses',{method:'POST',body:JSON.stringify({customerName:name.value,customerPhone:phone.value,months:months.value,maxDevices:devices.value})});if(!r.ok){alert(r.message);return}created.innerHTML='Clave creada: <b>'+esc(r.license.key)+'</b>';if(r.creditsRemaining!==undefined)updateCredits(r.creditsRemaining);else refreshSession();load()}
 async function saveLicense(key){const r=await api('/api/admin/update',{method:'POST',body:JSON.stringify({licenseKey:key,customerName:document.getElementById('name-'+key).value,customerPhone:document.getElementById('phone-'+key).value,status:document.getElementById('status-'+key).value,expiresAt:document.getElementById('expires-'+key).value,maxDevices:document.getElementById('devices-'+key).value})});if(!r.ok)alert(r.message);load()}
 async function clearDevices(key){if(!confirm('Liberar dispositivos usados?'))return;const r=await api('/api/admin/update',{method:'POST',body:JSON.stringify({licenseKey:key,clearDevices:true})});if(!r.ok)alert(r.message);load()}
 async function deleteLicense(key){if(!confirm('Seguro que quieres borrar esta licencia?'))return;const r=await api('/api/admin/delete',{method:'POST',body:JSON.stringify({licenseKey:key})});if(!r.ok)alert(r.message);load()}
 async function loadUsers(){const r=await api('/api/admin/users');if(!r.ok){alert(r.message);return}userRows.innerHTML=r.users.map(u=>'<tr><td>'+esc(u.username)+'</td><td><b>'+esc(u.credits)+'</b></td><td><input id="credits-'+u.username+'" type="number" min="1" value="1" style="width:80px"><button onclick="addCredits(\\''+u.username+'\\')">Cargar</button></td><td><button class="danger" onclick="deleteUser(\\''+u.username+'\\')">Borrar</button></td></tr>').join('')}
-async function createUser(){const r=await api('/api/admin/users',{method:'POST',body:JSON.stringify({username:newUser.value,password:newPass.value,credits:newCredits.value})});if(!r.ok){alert(r.message);return}newUser.value='';newPass.value='';newCredits.value='0';loadUsers()}
-async function addCredits(username){const amount=document.getElementById('credits-'+username).value;const r=await api('/api/admin/users/credits',{method:'POST',body:JSON.stringify({username,addCredits:amount})});if(!r.ok){alert(r.message);return}loadUsers()}
-async function deleteUser(username){if(!confirm('Borrar subusuario? Tambien se borraran sus licencias asociadas.'))return;const r=await api('/api/admin/users/delete',{method:'POST',body:JSON.stringify({username})});if(!r.ok)alert(r.message);loadUsers();load()}
+async function createUser(){const r=await api('/api/admin/users',{method:'POST',body:JSON.stringify({username:newUser.value,password:newPass.value,credits:newCredits.value})});if(!r.ok){alert(r.message);return}newUser.value='';newPass.value='';newCredits.value='0';if(r.creditsRemaining!==undefined)updateCredits(r.creditsRemaining);loadUsers()}
+async function addCredits(username){const amount=document.getElementById('credits-'+username).value;const r=await api('/api/admin/users/credits',{method:'POST',body:JSON.stringify({username,addCredits:amount})});if(!r.ok){alert(r.message);return}if(r.creditsRemaining!==undefined)updateCredits(r.creditsRemaining);loadUsers()}
+async function deleteUser(username){if(!confirm('Borrar subusuario? Tambien se borraran sus subusuarios y licencias asociadas.'))return;const r=await api('/api/admin/users/delete',{method:'POST',body:JSON.stringify({username})});if(!r.ok)alert(r.message);loadUsers();load()}
 </script></body></html>`;
 
 app.use(cors());
@@ -53,7 +53,10 @@ function normalizeDb(db){
   if(!db || typeof db !== 'object') db = defaultDb();
   if(!Array.isArray(db.users)) db.users = [];
   if(!Array.isArray(db.licenses)) db.licenses = [];
-  for(const u of db.users) u.credits = Math.max(0, Number(u.credits || 0));
+  for(const u of db.users) {
+    u.credits = Math.max(0, Number(u.credits || 0));
+    if(!u.parentUser) u.parentUser = 'admin';
+  }
   for(const l of db.licenses) if(!l.ownerUser) l.ownerUser = 'admin';
   return db;
 }
@@ -141,6 +144,22 @@ async function auth(req,res,next){
 }
 function visibleLicenses(db, req){ return req.isAdmin ? db.licenses : db.licenses.filter(l => l.ownerUser === req.panelUser); }
 function findLicense(db, req, key){ return visibleLicenses(db, req).find(x => x.key === key); }
+function visibleUsers(db, req){ return req.isAdmin ? db.users : db.users.filter(u => u.parentUser === req.panelUser); }
+function findManagedUser(db, req, username){ return visibleUsers(db, req).find(u => u.username === username); }
+function collectUserTree(db, username){
+  const names = new Set([username]);
+  let changed = true;
+  while(changed) {
+    changed = false;
+    for(const u of db.users) {
+      if(!names.has(u.username) && names.has(u.parentUser)) {
+        names.add(u.username);
+        changed = true;
+      }
+    }
+  }
+  return names;
+}
 function asyncRoute(fn){
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 }
@@ -155,11 +174,10 @@ app.get('/api/panel/session', auth, asyncRoute(async (req,res)=>{
   res.json({ok:true, user:req.panelUser, isAdmin:req.isAdmin, credits});
 }));
 app.get('/api/admin/users', auth, asyncRoute(async (req,res)=>{
-  if(!req.isAdmin) return res.status(403).json({ok:false,message:'Solo admin'});
-  res.json({ok:true, users: (await load()).users.map(u=>({username:u.username, credits:u.credits || 0}))});
+  const db = await load();
+  res.json({ok:true, users: visibleUsers(db, req).map(u=>({username:u.username, credits:u.credits || 0, parentUser:u.parentUser || 'admin'}))});
 }));
 app.post('/api/admin/users', auth, asyncRoute(async (req,res)=>{
-  if(!req.isAdmin) return res.status(403).json({ok:false,message:'Solo admin'});
   const username = cleanUser(req.body.username);
   const password = String(req.body.password || '').trim();
   const credits = Math.max(0, Math.floor(Number(req.body.credits || 0)));
@@ -167,28 +185,46 @@ app.post('/api/admin/users', auth, asyncRoute(async (req,res)=>{
   if(username === 'admin') return res.status(400).json({ok:false,message:'Ese usuario esta reservado'});
   const db = await load();
   if(db.users.some(u=>u.username===username)) return res.status(409).json({ok:false,message:'El usuario ya existe'});
-  db.users.push({username,password,credits,createdAt:new Date().toISOString()});
-  await save(db); res.json({ok:true});
+  let creditsRemaining = null;
+  if(!req.isAdmin) {
+    const parent = db.users.find(u=>u.username===req.panelUser);
+    if(!parent) return res.status(404).json({ok:false,message:'Subusuario no encontrado'});
+    parent.credits = Math.max(0, Number(parent.credits || 0));
+    if(credits <= 0) return res.status(400).json({ok:false,message:'Para crear un subusuario debes cargarle creditos'});
+    if(parent.credits < credits) return res.status(403).json({ok:false,message:'Creditos insuficientes para cargarle '+credits+' credito(s).'});
+    parent.credits -= credits;
+    creditsRemaining = parent.credits;
+  }
+  db.users.push({username,password,credits,parentUser:req.panelUser,createdAt:new Date().toISOString()});
+  await save(db); res.json({ok:true, creditsRemaining});
 }));
 app.post('/api/admin/users/credits', auth, asyncRoute(async (req,res)=>{
-  if(!req.isAdmin) return res.status(403).json({ok:false,message:'Solo admin'});
   const username = cleanUser(req.body.username);
   const addCredits = Math.floor(Number(req.body.addCredits || 0));
   if(!username || addCredits <= 0) return res.status(400).json({ok:false,message:'Indica creditos mayores que 0'});
   const db = await load();
-  const user = db.users.find(u=>u.username===username);
+  const user = findManagedUser(db, req, username);
   if(!user) return res.status(404).json({ok:false,message:'Subusuario no encontrado'});
+  let creditsRemaining = null;
+  if(!req.isAdmin) {
+    const parent = db.users.find(u=>u.username===req.panelUser);
+    if(!parent) return res.status(404).json({ok:false,message:'Subusuario no encontrado'});
+    parent.credits = Math.max(0, Number(parent.credits || 0));
+    if(parent.credits < addCredits) return res.status(403).json({ok:false,message:'Creditos insuficientes para cargar '+addCredits+' credito(s).'});
+    parent.credits -= addCredits;
+    creditsRemaining = parent.credits;
+  }
   user.credits = Math.max(0, Number(user.credits || 0)) + addCredits;
-  await save(db); res.json({ok:true, credits:user.credits});
+  await save(db); res.json({ok:true, credits:user.credits, creditsRemaining});
 }));
 app.post('/api/admin/users/delete', auth, asyncRoute(async (req,res)=>{
-  if(!req.isAdmin) return res.status(403).json({ok:false,message:'Solo admin'});
   const username = cleanUser(req.body.username);
   if(username === 'admin') return res.status(400).json({ok:false,message:'No se puede borrar admin'});
   const db = await load();
-  if(!db.users.some(u=>u.username===username)) return res.status(404).json({ok:false,message:'Subusuario no encontrado'});
-  db.users = db.users.filter(u=>u.username!==username);
-  db.licenses = db.licenses.filter(l=>l.ownerUser!==username);
+  if(!findManagedUser(db, req, username)) return res.status(404).json({ok:false,message:'Subusuario no encontrado'});
+  const usersToDelete = collectUserTree(db, username);
+  db.users = db.users.filter(u=>!usersToDelete.has(u.username));
+  db.licenses = db.licenses.filter(l=>!usersToDelete.has(l.ownerUser));
   await save(db); res.json({ok:true});
 }));
 

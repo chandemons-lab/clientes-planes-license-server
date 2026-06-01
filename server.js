@@ -17,7 +17,7 @@ const SUPABASE_TABLE = process.env.SUPABASE_TABLE || 'panel_data';
 const SUPABASE_BACKUP_TABLE = process.env.SUPABASE_BACKUP_TABLE || 'panel_backups';
 const USE_SUPABASE = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
 
-const ADMIN_HTML = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Panel Licencias</title><style>body{font-family:Arial;margin:0;background:#f5f7fb;color:#172033}.wrap{max-width:1200px;margin:auto;padding:24px}.card{background:white;border-radius:12px;padding:20px;margin:14px 0;box-shadow:0 10px 30px #0001}input,select,button{padding:10px;border-radius:8px;border:1px solid #ccd;margin:4px}button{background:#1e7f4f;color:white;border:0;cursor:pointer}button.danger{background:#b00020}button.secondary{background:#334155}table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid #eee;padding:8px;text-align:left;vertical-align:top}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px}.actions{display:flex;gap:6px;flex-wrap:wrap}.small{font-size:12px;color:#64748b}.hidden{display:none}</style></head><body><div class="wrap"><h1>Panel de Licencias</h1><div class="card"><h2>Acceso</h2><input id="user" placeholder="Usuario" value="admin"><input id="pass" type="password" placeholder="Contrasena"><button onclick="login()">Entrar</button><p class="small">Admin principal: usuario admin + tu ADMIN_PASSWORD de Render.</p></div><div id="app" class="hidden"><div class="card"><h2>Crear licencia</h2><div class="grid"><input id="name" placeholder="Nombre cliente"><input id="phone" placeholder="Telefono"><input id="months" type="number" value="12" placeholder="Meses"><input id="devices" type="number" value="1" placeholder="Dispositivos"></div><button onclick="createLicense()">Generar clave</button><p id="created"></p></div><div id="usersCard" class="card hidden"><h2>Subusuarios</h2><div class="grid"><input id="newUser" placeholder="Usuario"><input id="newPass" placeholder="Contrasena"><button onclick="createUser()">Crear subusuario</button></div><table><thead><tr><th>Usuario</th><th>Accion</th></tr></thead><tbody id="userRows"></tbody></table></div><div class="card"><h2>Licencias</h2><table><thead><tr><th>Clave</th><th>Usuario</th><th>Cliente</th><th>Estado</th><th>Vence</th><th>Dispositivos</th><th>Acciones</th></tr></thead><tbody id="rows"></tbody></table></div></div></div><script>
+const ADMIN_HTML = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Panel Licencias</title><style>body{font-family:Arial;margin:0;background:#f5f7fb;color:#172033}.wrap{max-width:1200px;margin:auto;padding:24px}.card{background:white;border-radius:12px;padding:20px;margin:14px 0;box-shadow:0 10px 30px #0001}input,select,button{padding:10px;border-radius:8px;border:1px solid #ccd;margin:4px}button{background:#1e7f4f;color:white;border:0;cursor:pointer}button.danger{background:#b00020}button.secondary{background:#334155}table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid #eee;padding:8px;text-align:left;vertical-align:top}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px}.actions{display:flex;gap:6px;flex-wrap:wrap}.small{font-size:12px;color:#64748b}.hidden{display:none}</style></head><body><div class="wrap"><h1>Panel de Licencias</h1><div class="card"><h2>Acceso</h2><input id="user" placeholder="Usuario" value="admin"><input id="pass" type="password" placeholder="Contrasena"><button onclick="login()">Entrar</button><p class="small">Admin principal: usuario admin + tu ADMIN_PASSWORD de Render.</p></div><div id="app" class="hidden"><div class="card"><h2>Crear licencia</h2><div class="grid"><input id="name" placeholder="Nombre cliente"><input id="phone" placeholder="Telefono"><input id="months" type="number" value="12" placeholder="Meses"><input id="devices" type="number" value="1" placeholder="Dispositivos"></div><button onclick="createLicense()">Generar clave</button><p class="small">Subusuarios: 1 credito = 1 mes de licencia.</p><p id="created"></p></div><div id="usersCard" class="card hidden"><h2>Subusuarios</h2><div class="grid"><input id="newUser" placeholder="Usuario"><input id="newPass" placeholder="Contrasena"><input id="newCredits" type="number" min="0" value="0" placeholder="Creditos iniciales"><button onclick="createUser()">Crear subusuario</button></div><table><thead><tr><th>Usuario</th><th>Creditos</th><th>Cargar creditos</th><th>Accion</th></tr></thead><tbody id="userRows"></tbody></table></div><div class="card"><h2>Licencias</h2><table><thead><tr><th>Clave</th><th>Usuario</th><th>Cliente</th><th>Estado</th><th>Vence</th><th>Dispositivos</th><th>Acciones</th></tr></thead><tbody id="rows"></tbody></table></div></div></div><script>
 let session=null;
 const api=(url,opts={})=>fetch(url,{...opts,headers:{'Content-Type':'application/json','x-panel-user':user.value,'x-panel-password':pass.value,...(opts.headers||{})}}).then(r=>r.json());
 function esc(v){return String(v||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -28,9 +28,10 @@ async function createLicense(){const r=await api('/api/admin/licenses',{method:'
 async function saveLicense(key){const r=await api('/api/admin/update',{method:'POST',body:JSON.stringify({licenseKey:key,customerName:document.getElementById('name-'+key).value,customerPhone:document.getElementById('phone-'+key).value,status:document.getElementById('status-'+key).value,expiresAt:document.getElementById('expires-'+key).value,maxDevices:document.getElementById('devices-'+key).value})});if(!r.ok)alert(r.message);load()}
 async function clearDevices(key){if(!confirm('Liberar dispositivos usados?'))return;const r=await api('/api/admin/update',{method:'POST',body:JSON.stringify({licenseKey:key,clearDevices:true})});if(!r.ok)alert(r.message);load()}
 async function deleteLicense(key){if(!confirm('Seguro que quieres borrar esta licencia?'))return;const r=await api('/api/admin/delete',{method:'POST',body:JSON.stringify({licenseKey:key})});if(!r.ok)alert(r.message);load()}
-async function loadUsers(){const r=await api('/api/admin/users');if(!r.ok){alert(r.message);return}userRows.innerHTML=r.users.map(u=>'<tr><td>'+esc(u.username)+'</td><td><button class="danger" onclick="deleteUser(\\''+u.username+'\\')">Borrar</button></td></tr>').join('')}
-async function createUser(){const r=await api('/api/admin/users',{method:'POST',body:JSON.stringify({username:newUser.value,password:newPass.value})});if(!r.ok){alert(r.message);return}newUser.value='';newPass.value='';loadUsers()}
-async function deleteUser(username){if(!confirm('Borrar subusuario? Sus licencias no se borran.'))return;const r=await api('/api/admin/users/delete',{method:'POST',body:JSON.stringify({username})});if(!r.ok)alert(r.message);loadUsers()}
+async function loadUsers(){const r=await api('/api/admin/users');if(!r.ok){alert(r.message);return}userRows.innerHTML=r.users.map(u=>'<tr><td>'+esc(u.username)+'</td><td><b>'+esc(u.credits)+'</b></td><td><input id="credits-'+u.username+'" type="number" min="1" value="1" style="width:80px"><button onclick="addCredits(\\''+u.username+'\\')">Cargar</button></td><td><button class="danger" onclick="deleteUser(\\''+u.username+'\\')">Borrar</button></td></tr>').join('')}
+async function createUser(){const r=await api('/api/admin/users',{method:'POST',body:JSON.stringify({username:newUser.value,password:newPass.value,credits:newCredits.value})});if(!r.ok){alert(r.message);return}newUser.value='';newPass.value='';newCredits.value='0';loadUsers()}
+async function addCredits(username){const amount=document.getElementById('credits-'+username).value;const r=await api('/api/admin/users/credits',{method:'POST',body:JSON.stringify({username,addCredits:amount})});if(!r.ok){alert(r.message);return}loadUsers()}
+async function deleteUser(username){if(!confirm('Borrar subusuario? Tambien se borraran sus licencias asociadas.'))return;const r=await api('/api/admin/users/delete',{method:'POST',body:JSON.stringify({username})});if(!r.ok)alert(r.message);loadUsers();load()}
 </script></body></html>`;
 
 app.use(cors());
@@ -50,6 +51,7 @@ function normalizeDb(db){
   if(!db || typeof db !== 'object') db = defaultDb();
   if(!Array.isArray(db.users)) db.users = [];
   if(!Array.isArray(db.licenses)) db.licenses = [];
+  for(const u of db.users) u.credits = Math.max(0, Number(u.credits || 0));
   for(const l of db.licenses) if(!l.ownerUser) l.ownerUser = 'admin';
   return db;
 }
@@ -144,18 +146,30 @@ function asyncRoute(fn){
 app.get('/api/panel/session', auth, (req,res)=> res.json({ok:true, user:req.panelUser, isAdmin:req.isAdmin}));
 app.get('/api/admin/users', auth, asyncRoute(async (req,res)=>{
   if(!req.isAdmin) return res.status(403).json({ok:false,message:'Solo admin'});
-  res.json({ok:true, users: (await load()).users.map(u=>({username:u.username}))});
+  res.json({ok:true, users: (await load()).users.map(u=>({username:u.username, credits:u.credits || 0}))});
 }));
 app.post('/api/admin/users', auth, asyncRoute(async (req,res)=>{
   if(!req.isAdmin) return res.status(403).json({ok:false,message:'Solo admin'});
   const username = cleanUser(req.body.username);
   const password = String(req.body.password || '').trim();
+  const credits = Math.max(0, Math.floor(Number(req.body.credits || 0)));
   if(!username || !password) return res.status(400).json({ok:false,message:'Faltan usuario o contrasena'});
   if(username === 'admin') return res.status(400).json({ok:false,message:'Ese usuario esta reservado'});
   const db = await load();
   if(db.users.some(u=>u.username===username)) return res.status(409).json({ok:false,message:'El usuario ya existe'});
-  db.users.push({username,password,createdAt:new Date().toISOString()});
+  db.users.push({username,password,credits,createdAt:new Date().toISOString()});
   await save(db); res.json({ok:true});
+}));
+app.post('/api/admin/users/credits', auth, asyncRoute(async (req,res)=>{
+  if(!req.isAdmin) return res.status(403).json({ok:false,message:'Solo admin'});
+  const username = cleanUser(req.body.username);
+  const addCredits = Math.floor(Number(req.body.addCredits || 0));
+  if(!username || addCredits <= 0) return res.status(400).json({ok:false,message:'Indica creditos mayores que 0'});
+  const db = await load();
+  const user = db.users.find(u=>u.username===username);
+  if(!user) return res.status(404).json({ok:false,message:'Subusuario no encontrado'});
+  user.credits = Math.max(0, Number(user.credits || 0)) + addCredits;
+  await save(db); res.json({ok:true, credits:user.credits});
 }));
 app.post('/api/admin/users/delete', auth, asyncRoute(async (req,res)=>{
   if(!req.isAdmin) return res.status(403).json({ok:false,message:'Solo admin'});
@@ -164,13 +178,21 @@ app.post('/api/admin/users/delete', auth, asyncRoute(async (req,res)=>{
   const db = await load();
   if(!db.users.some(u=>u.username===username)) return res.status(404).json({ok:false,message:'Subusuario no encontrado'});
   db.users = db.users.filter(u=>u.username!==username);
+  db.licenses = db.licenses.filter(l=>l.ownerUser!==username);
   await save(db); res.json({ok:true});
 }));
 
 app.get('/api/admin/licenses', auth, asyncRoute(async (req,res)=> res.json({ok:true, licenses: visibleLicenses(await load(), req)})));
 app.post('/api/admin/licenses', auth, asyncRoute(async (req,res)=>{
   const db = await load();
-  const months = Number(req.body.months || 12);
+  const months = Math.max(1, Math.floor(Number(req.body.months || 12)));
+  if(!req.isAdmin) {
+    const user = db.users.find(u=>u.username===req.panelUser);
+    if(!user) return res.status(404).json({ok:false,message:'Subusuario no encontrado'});
+    user.credits = Math.max(0, Number(user.credits || 0));
+    if(user.credits < months) return res.status(403).json({ok:false,message:'Creditos insuficientes. Necesitas '+months+' credito(s).'});
+    user.credits -= months;
+  }
   const license = {
     key: newKey(),
     ownerUser: req.panelUser,

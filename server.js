@@ -14,6 +14,7 @@ const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 const SUPABASE_TABLE = process.env.SUPABASE_TABLE || 'panel_data';
+const SUPABASE_BACKUP_TABLE = process.env.SUPABASE_BACKUP_TABLE || 'panel_backups';
 const USE_SUPABASE = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
 
 const ADMIN_HTML = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Panel Licencias</title><style>body{font-family:Arial;margin:0;background:#f5f7fb;color:#172033}.wrap{max-width:1200px;margin:auto;padding:24px}.card{background:white;border-radius:12px;padding:20px;margin:14px 0;box-shadow:0 10px 30px #0001}input,select,button{padding:10px;border-radius:8px;border:1px solid #ccd;margin:4px}button{background:#1e7f4f;color:white;border:0;cursor:pointer}button.danger{background:#b00020}button.secondary{background:#334155}table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid #eee;padding:8px;text-align:left;vertical-align:top}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:6px}.actions{display:flex;gap:6px;flex-wrap:wrap}.small{font-size:12px;color:#64748b}.hidden{display:none}</style></head><body><div class="wrap"><h1>Panel de Licencias</h1><div class="card"><h2>Acceso</h2><input id="user" placeholder="Usuario" value="admin"><input id="pass" type="password" placeholder="Contrasena"><button onclick="login()">Entrar</button><p class="small">Admin principal: usuario admin + tu ADMIN_PASSWORD de Render.</p></div><div id="app" class="hidden"><div class="card"><h2>Crear licencia</h2><div class="grid"><input id="name" placeholder="Nombre cliente"><input id="phone" placeholder="Telefono"><input id="months" type="number" value="12" placeholder="Meses"><input id="devices" type="number" value="1" placeholder="Dispositivos"></div><button onclick="createLicense()">Generar clave</button><p id="created"></p></div><div id="usersCard" class="card hidden"><h2>Subusuarios</h2><div class="grid"><input id="newUser" placeholder="Usuario"><input id="newPass" placeholder="Contrasena"><button onclick="createUser()">Crear subusuario</button></div><table><thead><tr><th>Usuario</th><th>Accion</th></tr></thead><tbody id="userRows"></tbody></table></div><div class="card"><h2>Licencias</h2><table><thead><tr><th>Clave</th><th>Usuario</th><th>Cliente</th><th>Estado</th><th>Vence</th><th>Dispositivos</th><th>Acciones</th></tr></thead><tbody id="rows"></tbody></table></div></div></div><script>
@@ -76,6 +77,14 @@ async function loadFromSupabase(){
   return normalizeDb(rows[0].data);
 }
 async function saveToSupabase(db){
+  const previous = await loadFromSupabase();
+  await supabaseRequest('/rest/v1/' + SUPABASE_BACKUP_TABLE, {
+    method: 'POST',
+    body: JSON.stringify({
+      data: previous,
+      created_at: new Date().toISOString()
+    })
+  });
   await supabaseRequest('/rest/v1/' + SUPABASE_TABLE + '?on_conflict=id', {
     method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates' },

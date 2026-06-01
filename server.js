@@ -279,8 +279,12 @@ app.post('/api/activate', asyncRoute(async (req,res)=>{
   if(l.status !== 'active') return res.status(403).json({ok:false,message:'Licencia bloqueada'});
   if(new Date(l.expiresAt) < new Date()) return res.status(403).json({ok:false,message:'Licencia vencida'});
   if(!l.devices.includes(deviceId)) {
-    if(l.devices.length >= l.maxDevices) return res.status(403).json({ok:false,message:'Licencia ya usada en otro dispositivo'});
-    l.devices.push(deviceId);
+    if(l.devices.length >= l.maxDevices) {
+      if(Number(l.maxDevices || 1) === 1) l.devices = [deviceId];
+      else return res.status(403).json({ok:false,message:'Licencia ya usada en otro dispositivo'});
+    } else {
+      l.devices.push(deviceId);
+    }
   }
   l.businessName = businessName || l.businessName || '';
   l.lastActivationAt = new Date().toISOString();

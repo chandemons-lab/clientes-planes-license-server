@@ -41,6 +41,15 @@ Con esas variables, el panel guarda los datos en Supabase y no se pierden aunque
 
 Cada vez que el panel guarda cambios, tambien deja una copia anterior en `panel_backups`.
 
+## Creditos de subusuarios
+
+El admin puede crear subusuarios con creditos iniciales y cargar mas creditos despues.
+
+- 1 credito = 1 mes de licencia.
+- Si un subusuario crea una licencia de 12 meses, se descuentan 12 creditos.
+- Si no tiene creditos suficientes, no puede crear la licencia.
+- Al borrar un subusuario, tambien se borran sus licencias asociadas.
+
 ## Opcion con Render de pago
 
 Si algun dia usas Render Starter, puedes usar Persistent Disk:

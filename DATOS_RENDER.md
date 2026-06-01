@@ -48,6 +48,8 @@ El admin puede crear subusuarios con creditos iniciales y cargar mas creditos de
 - 1 credito = 1 mes de licencia.
 - Si un subusuario crea una licencia de 12 meses, se descuentan 12 creditos.
 - Si no tiene creditos suficientes, no puede crear la licencia.
+- El subusuario ve sus creditos disponibles en el panel.
+- Al crear una licencia, el panel actualiza los creditos que le quedan.
 - Al borrar un subusuario, tambien se borran sus licencias asociadas.
 
 ## Opcion con Render de pago
